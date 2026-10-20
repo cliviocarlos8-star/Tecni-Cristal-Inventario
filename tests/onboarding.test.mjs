@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import ts from 'typescript';
+const source=readFileSync(new URL('../app/onboarding/model.ts',import.meta.url),'utf8');
+const js=ts.transpile(source,{module:ts.ModuleKind.ESNext});
+const {mergeState,shouldStart,canOperate,ROLLOUT}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+test('new accounts auto-start; existing accounts are not interrupted',()=>{assert.equal(shouldStart('2026-01-01',{version:1}),false);assert.equal(shouldStart(ROLLOUT,{version:1}),true);});
+test('completion and skipping survive state serialization',()=>{for(const field of ['completed','skipped']){const restored=JSON.parse(JSON.stringify(mergeState({version:1},{version:1,[field]:'2026-09-08'})));assert.equal(shouldStart('2027-01-01',restored),false);}});
+test('offline and account states retain independent hints and completion',()=>{const merged=mergeState({version:1,completed:'saved',hints:{work:true}},{version:1,started:'now',hints:{catalog:true}});assert.equal(merged.completed,'saved');assert.deepEqual(merged.hints,{work:true,catalog:true});});
+test('replaying or skipping a completed introduction does not erase completion',()=>{assert.equal(mergeState({version:1,completed:'first'},{version:1,skipped:'later'}).completed,'first');});
+test('only existing permitted roles receive operations',()=>{for(const role of ['ADMIN','GERENCIA','DEPOSITO'])assert.equal(canOperate(role),true);for(const role of ['CONSULTA','UNKNOWN',''])assert.equal(canOperate(role),false);});
+test('future versions are preserved without forcing a replay',()=>{const s=mergeState({version:2,completed:'saved'},{version:1});assert.equal(s.version,2);assert.equal(shouldStart('2027-01-01',s),false);});
+test('mobile help keeps the introduction as a complete menu row',()=>{const mobile=readFileSync(new URL('../app/mobile-inventory-app.tsx',import.meta.url),'utf8');const provider=readFileSync(new URL('../app/onboarding/provider.tsx',import.meta.url),'utf8');assert.match(mobile,/<IntroductionLink menu\/>/);assert.match(provider,/Volver a ver la guía inicial/);});
+test('inventory and technical catalog expose the same two-way section switcher',()=>{const mobile=readFileSync(new URL('../app/mobile-inventory-app.tsx',import.meta.url),'utf8');const catalog=readFileSync(new URL('../app/technical-catalog.tsx',import.meta.url),'utf8');assert.match(mobile,/CAMBIAR SECCIÓN/);assert.match(mobile,/href="\/catalogo-tecnico"/);assert.match(mobile,/tecni-cristal-logo\.jpg/);assert.match(catalog,/CAMBIAR SECCIÓN/);assert.match(catalog,/href="\/"/);assert.match(catalog,/tecni-cristal-logo\.jpg/);});
